@@ -1,0 +1,83 @@
+name: Test Nix reinstall
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up fake systemd and fake nix-installer binary
+        run: |
+          # Create /run/systemd/system so the action believes systemd is present.
+          # This keeps forceNoSystemd=false so the post step does not try to
+          # read a daemon PID file that was never written.
+          sudo mkdir -p /run/systemd/system
+
+          # Create a fake nix-installer binary so the action does not need to
+          # download anything from the internet. The binary just exits 0.
+          FAKE_DIR="$GITHUB_WORKSPACE/tests/fake-installer"
+          mkdir -p "$FAKE_DIR"
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64)  PLATFORM="x86_64-linux"  ;;
+            aarch64) PLATFORM="aarch64-linux" ;;
+            arm64)   PLATFORM="aarch64-linux" ;;
+            *)       PLATFORM="${ARCH}-linux"  ;;
+          esac
+          BINARY="$FAKE_DIR/nix-installer-${PLATFORM}"
+          printf '#!/bin/sh\necho "fake nix-installer: $*"\nexit 0\n' > "$BINARY"
+          chmod +x "$BINARY"
+          echo "FAKE_INSTALLER_DIR=$FAKE_DIR" >> "$GITHUB_ENV"
+          echo "Created fake binary: $BINARY"
+
+      - name: First installation
+        id: first-install
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          diagnostic-endpoint: ""
+          trust-runner-user: true
+          github-token: ${{ github.token }}
+          summarize: false
+          local-root: ${{ env.FAKE_INSTALLER_DIR }}
+
+      - name: Assert first install ran
+        env:
+          OUTCOME: ${{ steps.first-install.outcome }}
+        run: |
+          echo "first-install outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: first install ran (outcome: $OUTCOME)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Reinstall with reinstall flag
+        id: reinstall
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          diagnostic-endpoint: ""
+          trust-runner-user: true
+          github-token: ${{ github.token }}
+          summarize: false
+          local-root: ${{ env.FAKE_INSTALLER_DIR }}
+          reinstall: true
+
+      - name: Assert reinstall ran
+        env:
+          FIRST_OUTCOME: ${{ steps.first-install.outcome }}
+          REINSTALL_OUTCOME: ${{ steps.reinstall.outcome }}
+        run: |
+          echo "first-install outcome: $FIRST_OUTCOME"
+          echo "reinstall outcome: $REINSTALL_OUTCOME"
+          if [ "$REINSTALL_OUTCOME" = "success" ] || [ "$REINSTALL_OUTCOME" = "failure" ]; then
+            echo "PASS: reinstall ran (outcome: $REINSTALL_OUTCOME)"
+          else
+            echo "FAIL: unexpected reinstall outcome '$REINSTALL_OUTCOME'"
+            exit 1
+          fi

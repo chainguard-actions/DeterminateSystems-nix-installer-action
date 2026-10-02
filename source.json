@@ -1,0 +1,16 @@
+{
+  "owner": "DeterminateSystems",
+  "repo": "nix-installer-action",
+  "version": "v23",
+  "commit_sha": "3138316df39ed29be04236d7ffc686fa525866aa",
+  "url": "https://github.com/DeterminateSystems/nix-installer-action",
+  "policy_sha": "d636be7e43ef829af6e853da6b3c7566db9f72fe",
+  "test_policy_sha": "843adf9e4b8f85d0c08b27b9d0b09dd094b54702",
+  "test_agent_version": "2",
+  "harden_agent_version": "2",
+  "node_artifact": {
+    "gcs_uri": "gs://prod-actions-node-artifacts/node-artifacts/DeterminateSystems/nix-installer-action/v23/sha256-35a2a2f18509f15b25b77825cd69dd051d1c6dbb5a4d82373ceddac39ef68fc5.tar.gz",
+    "sha256": "35a2a2f18509f15b25b77825cd69dd051d1c6dbb5a4d82373ceddac39ef68fc5",
+    "size_bytes": 21638779
+  }
+}
