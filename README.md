@@ -1,0 +1,1 @@
+# DeterminateSystems-nix-installer-action
