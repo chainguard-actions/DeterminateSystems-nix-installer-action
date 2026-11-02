@@ -6,9 +6,9 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 
 ## Versions
 
-| Version | Tag | Upstream commit |
-|---------|-----|-----------------|
-| v23 | [`v23`](https://github.com/chainguard-actions/DeterminateSystems-nix-installer-action/tree/v23) | [`3138316`](https://github.com/DeterminateSystems/nix-installer-action/commit/3138316df39ed29be04236d7ffc686fa525866aa) |
+| Version | Tag | Upstream commit | Hardening report |
+|---------|-----|-----------------|------------------|
+| v23 | [`v23`](https://github.com/chainguard-actions/DeterminateSystems-nix-installer-action/tree/v23) | [`3138316`](https://github.com/DeterminateSystems/nix-installer-action/commit/3138316df39ed29be04236d7ffc686fa525866aa) | [`HARDENING.md`](https://github.com/chainguard-actions/DeterminateSystems-nix-installer-action/blob/v23/HARDENING.md) |
 
 ## Privacy
 
