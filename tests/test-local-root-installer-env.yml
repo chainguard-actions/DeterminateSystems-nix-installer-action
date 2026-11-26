@@ -1,0 +1,94 @@
+name: Test local-root installer receives logging/network env from inputs
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create fake nix-installer binaries in a local root
+        run: |
+          set -eu
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          # Pretend systemd is present so the action does not spawn a daemon itself
+          $SUDO mkdir -p /run/systemd/system || true
+          rm -rf /tmp/fake-nix-installer /tmp/fake-root /tmp/fake-bin
+          mkdir -p /tmp/fake-root /tmp/fake-bin
+          cat > /tmp/fake-root/nix-installer-x86_64-linux <<'EOF'
+          #!/bin/sh
+          LOG=/tmp/fake-nix-installer
+          mkdir -p "$LOG"
+          echo "$0" > "$LOG/argv0"
+          printf '%s\n' "$@" > "$LOG/args"
+          env | grep -E '^(NIX_INSTALLER_[A-Z_]*|RUST_BACKTRACE)=' | sort > "$LOG/env" || true
+          if [ ! -d /run/systemd/system ]; then
+            SUDO=""
+            if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+            $SUDO mkdir -p /nix/var/nix/profiles/default/bin /usr/local/bin
+            for d in /nix/var/nix/profiles/default/bin/nix-daemon /usr/local/bin/determinate-nixd; do
+              $SUDO sh -c "printf '#!/bin/sh\nmkdir -p /nix/var/nix/daemon-socket\ntouch /nix/var/nix/daemon-socket/socket\nexec sleep 3\n' > $d"
+              $SUDO chmod 755 "$d"
+            done
+          fi
+          echo "fake nix-installer invoked: $*"
+          exit 0
+          EOF
+          chmod 755 /tmp/fake-root/nix-installer-x86_64-linux
+          cp /tmp/fake-root/nix-installer-x86_64-linux /tmp/fake-root/nix-installer-aarch64-linux
+          cp /tmp/fake-root/nix-installer-x86_64-linux /tmp/fake-bin/nix-installer
+          chmod 755 /tmp/fake-root/* /tmp/fake-bin/*
+      - id: action
+        uses: .
+        with:
+          local-root: /tmp/fake-root
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          backtrace: full
+          log-directives: nix_installer=trace
+          logger: compact
+          nix-package-url: https://example.com/nix-package.tar.xz
+          proxy: http://proxy.example.com:3128
+          ssl-cert-file: /etc/ssl/certs/ca-certificates.crt
+      - name: Assert fake installer was invoked from local-root
+        run: |
+          set -u
+          cat /tmp/fake-nix-installer/argv0 || { echo "FAIL: fake installer not invoked"; exit 1; }
+          if ! grep -q '^/tmp/fake-root/nix-installer-' /tmp/fake-nix-installer/argv0; then
+            echo "FAIL: installer was not run from local-root"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert installer env reflects inputs
+        run: |
+          set -u
+          ENVF=/tmp/fake-nix-installer/env
+          echo "--- env ---"; cat "$ENVF"
+          check() {
+            if grep -qxF "$1" "$ENVF"; then
+              echo "PASS: $1"
+            else
+              echo "FAIL: missing '$1'"
+              exit 1
+            fi
+          }
+          check "RUST_BACKTRACE=full"
+          check "NIX_INSTALLER_LOG_DIRECTIVES=nix_installer=trace"
+          check "NIX_INSTALLER_LOGGER=compact"
+          check "NIX_INSTALLER_NIX_PACKAGE_URL=https://example.com/nix-package.tar.xz"
+          check "NIX_INSTALLER_PROXY=http://proxy.example.com:3128"
+          check "NIX_INSTALLER_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+          check "NIX_INSTALLER_NO_CONFIRM=true"
+      - name: Assert upstream Nix flag passed
+        run: |
+          cat /tmp/fake-nix-installer/args
+          if [ "$(sed -n 1p /tmp/fake-nix-installer/args)" != "install" ]; then
+            echo "FAIL: first arg should be 'install'"
+            exit 1
+          fi
+          if ! grep -q 'prefer-upstream-nix' /tmp/fake-nix-installer/args; then
+            echo "FAIL: expected --prefer-upstream-nix when determinate=false"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,68 @@
+name: Test nix build user/group inputs are passed to the installer
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create fake nix-installer binaries in a local root
+        run: |
+          set -eu
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          $SUDO mkdir -p /run/systemd/system || true
+          rm -rf /tmp/fake-nix-installer /tmp/fake-root
+          mkdir -p /tmp/fake-root
+          cat > /tmp/fake-root/nix-installer-x86_64-linux <<'EOF'
+          #!/bin/sh
+          LOG=/tmp/fake-nix-installer
+          mkdir -p "$LOG"
+          echo "$0" > "$LOG/argv0"
+          printf '%s\n' "$@" > "$LOG/args"
+          env | grep -E '^(NIX_INSTALLER_[A-Z_]*|RUST_BACKTRACE)=' | sort > "$LOG/env" || true
+          if [ ! -d /run/systemd/system ]; then
+            SUDO=""
+            if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+            $SUDO mkdir -p /nix/var/nix/profiles/default/bin /usr/local/bin
+            for d in /nix/var/nix/profiles/default/bin/nix-daemon /usr/local/bin/determinate-nixd; do
+              $SUDO sh -c "printf '#!/bin/sh\nmkdir -p /nix/var/nix/daemon-socket\ntouch /nix/var/nix/daemon-socket/socket\nexec sleep 3\n' > $d"
+              $SUDO chmod 755 "$d"
+            done
+          fi
+          echo "fake nix-installer invoked: $*"
+          exit 0
+          EOF
+          cp /tmp/fake-root/nix-installer-x86_64-linux /tmp/fake-root/nix-installer-aarch64-linux
+          chmod 755 /tmp/fake-root/*
+      - id: action
+        uses: .
+        with:
+          local-root: /tmp/fake-root
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          nix-build-group-id: "30123"
+          nix-build-group-name: nixbld-test
+          nix-build-user-base: "31000"
+          nix-build-user-count: "8"
+          nix-build-user-prefix: nixtest
+      - name: Assert build user/group env reflects inputs
+        run: |
+          set -u
+          ENVF=/tmp/fake-nix-installer/env
+          [ -f "$ENVF" ] || { echo "FAIL: fake installer not invoked"; exit 1; }
+          echo "--- env ---"; cat "$ENVF"
+          check() {
+            if grep -qxF "$1" "$ENVF"; then
+              echo "PASS: $1"
+            else
+              echo "FAIL: missing '$1'"
+              exit 1
+            fi
+          }
+          check "NIX_INSTALLER_NIX_BUILD_GROUP_ID=30123"
+          check "NIX_INSTALLER_NIX_BUILD_GROUP_NAME=nixbld-test"
+          check "NIX_INSTALLER_NIX_BUILD_USER_ID_BASE=31000"
+          check "NIX_INSTALLER_NIX_BUILD_USER_COUNT=8"
+          check "NIX_INSTALLER_NIX_BUILD_USER_PREFIX=nixtest"

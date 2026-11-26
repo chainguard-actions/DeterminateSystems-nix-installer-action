@@ -1,0 +1,47 @@
+name: Test upstream Nix install with extra-conf and kvm disabled
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          extra-conf: |
+            max-jobs = 3
+      - name: Assert Nix installed
+        run: |
+          if [ ! -f /nix/receipt.json ]; then
+            echo "FAIL: /nix/receipt.json not found"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix --version: $VERSION"
+          if [ -z "$VERSION" ]; then
+            echo "FAIL: empty nix --version"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert extra-conf written to nix config
+        run: |
+          ls -la /etc/nix || true
+          cat /etc/nix/nix.conf 2>/dev/null || true
+          cat /etc/nix/nix.custom.conf 2>/dev/null || true
+          if grep -qs '^max-jobs = 3' /etc/nix/nix.conf /etc/nix/nix.custom.conf; then
+            echo "PASS: extra-conf present"
+          else
+            echo "FAIL: 'max-jobs = 3' not found in nix config"
+            exit 1
+          fi
+      - name: Assert KVM setup was skipped
+        run: |
+          echo "DETERMINATE_NIX_KVM=${DETERMINATE_NIX_KVM:-<unset>}"
+          if [ -n "${DETERMINATE_NIX_KVM:-}" ]; then
+            echo "FAIL: DETERMINATE_NIX_KVM should not be set when kvm=false"
+            exit 1
+          fi
+          echo "PASS"

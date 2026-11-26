@@ -1,0 +1,44 @@
+name: Test basic install (Determinate Nix, defaults)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+      - name: Assert Nix is installed and usable
+        run: |
+          set -u
+          if [ ! -f /nix/receipt.json ]; then
+            echo "FAIL: /nix/receipt.json not found"
+            exit 1
+          fi
+          echo "PATH: $PATH"
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix --version: $VERSION"
+          if [ -z "$VERSION" ]; then
+            echo "FAIL: empty nix --version"
+            exit 1
+          fi
+          echo "PASS: nix installed"
+      - name: Assert Determinate Nix pieces present
+        run: |
+          if [ ! -x /usr/local/bin/determinate-nixd ]; then
+            echo "FAIL: /usr/local/bin/determinate-nixd not found"
+            exit 1
+          fi
+          echo "PASS: determinate-nixd present"
+      - name: Assert KVM env var exported
+        run: |
+          echo "DETERMINATE_NIX_KVM=${DETERMINATE_NIX_KVM:-<unset>}"
+          if [ "${DETERMINATE_NIX_KVM:-}" != "0" ] && [ "${DETERMINATE_NIX_KVM:-}" != "1" ]; then
+            echo "FAIL: DETERMINATE_NIX_KVM should be 0 or 1"
+            exit 1
+          fi
+          echo "PASS"
