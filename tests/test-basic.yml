@@ -1,0 +1,39 @@
+name: Test basic upstream Nix install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          logger: pretty
+      - name: Assert nix is on PATH and works
+        run: |
+          echo "PATH: $PATH"
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          RESULT="$(nix-instantiate --eval -E '1 + 2')"
+          echo "eval result: $RESULT"
+          if [ "$RESULT" != "3" ]; then
+            echo "FAIL: expected nix-instantiate to evaluate to 3"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert nix.conf contains trusted-users
+        run: |
+          cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null || true
+          if ! cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null | grep -qE '^trusted-users = root'; then
+            echo "FAIL: trusted-users not configured"
+            exit 1
+          fi
+          echo "PASS"

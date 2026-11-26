@@ -1,0 +1,55 @@
+name: Test source-binary runs an on-disk nix-installer
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Create a fake nix-installer binary
+        run: |
+          FAKE_BIN="$RUNNER_TEMP/fake-bin/nix-installer"
+          mkdir -p "$(dirname "$FAKE_BIN")"
+          cat > "$FAKE_BIN" <<'EOF'
+          #!/bin/bash
+          set -e
+          LOG=/tmp/fake-nix-installer
+          mkdir -p "$LOG"
+          printf '%s\n' "$@" > "$LOG/args"
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          $SUDO mkdir -p /nix/var/nix/profiles/default/bin /nix/var/nix/daemon-socket
+          printf '#!/bin/sh\ntouch /nix/var/nix/daemon-socket/socket\nexec sleep 20\n' | $SUDO tee /nix/var/nix/profiles/default/bin/nix-daemon >/dev/null
+          $SUDO chmod 755 /nix/var/nix/profiles/default/bin/nix-daemon
+          echo "fake nix-installer invoked"
+          EOF
+          chmod 755 "$FAKE_BIN"
+          echo "FAKE_BIN=$FAKE_BIN" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          source-binary: ${{ env.FAKE_BIN }}
+      - name: Assert the on-disk binary was executed
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          ARGS=/tmp/fake-nix-installer/args
+          if [ ! -f "$ARGS" ]; then
+            echo "FAIL: source-binary was not executed"
+            exit 1
+          fi
+          cat "$ARGS"
+          if [ "$(sed -n 1p "$ARGS")" != "install" ]; then
+            echo "FAIL: expected 'install' subcommand"
+            exit 1
+          fi
+          if ! grep -qxF -- "--prefer-upstream-nix" "$ARGS"; then
+            echo "FAIL: expected --prefer-upstream-nix"
+            exit 1
+          fi
+          echo "PASS"

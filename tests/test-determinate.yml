@@ -1,0 +1,33 @@
+name: Test Determinate Nix install (default)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: action
+        uses: .
+        with:
+          kvm: false
+      - name: Assert Determinate Nix installed and works
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "version: $VERSION"
+          if [ ! -x /usr/local/bin/determinate-nixd ]; then
+            echo "FAIL: determinate-nixd not installed"
+            exit 1
+          fi
+          RESULT="$(nix-instantiate --eval -E '2 * 21')"
+          echo "eval result: $RESULT"
+          if [ "$RESULT" != "42" ]; then
+            echo "FAIL: expected 42"
+            exit 1
+          fi
+          echo "PASS"

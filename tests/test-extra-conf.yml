@@ -1,0 +1,39 @@
+name: Test extra-conf is written to nix configuration
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          trust-runner-user: false
+          extra-conf: |
+            use-sqlite-wal = true
+            max-jobs = 3
+      - name: Assert extra-conf lines are present
+        run: |
+          CONF="$(cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null || true)"
+          echo "$CONF"
+          for line in 'use-sqlite-wal = true' 'max-jobs = 3'; do
+            if ! echo "$CONF" | grep -qxF "$line"; then
+              echo "FAIL: missing '$line' in nix configuration"
+              exit 1
+            fi
+          done
+          echo "PASS"
+      - name: Assert effective config reflects extra-conf
+        run: |
+          SHOWN="$(nix config show 2>/dev/null || nix show-config)"
+          echo "$SHOWN" | grep -E '^(max-jobs|use-sqlite-wal) ' || true
+          if ! echo "$SHOWN" | grep -qE '^max-jobs = 3$'; then
+            echo "FAIL: max-jobs not 3 in effective config"
+            exit 1
+          fi
+          echo "PASS"

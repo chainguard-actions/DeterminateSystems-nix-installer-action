@@ -1,0 +1,90 @@
+name: Test local-root takes precedence over source-* / nix-installer-* selectors
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: source-tag
+            source_tag: v3.12.2
+          - case: source-branch
+            source_branch: main
+          - case: source-pr
+            source_pr: "1"
+          - case: source-revision
+            source_revision: 0123456789abcdef0123456789abcdef01234567
+          - case: source-url-with-checksums
+            source_url: https://example.invalid/nix-installer-x86_64-linux
+            checksums_url: https://example.invalid/nix-installer.sha256sums
+            checksums_sha256: 0000000000000000000000000000000000000000000000000000000000000000
+          - case: nix-installer-tag
+            legacy_tag: v3.12.2
+          - case: nix-installer-branch
+            legacy_branch: main
+          - case: nix-installer-pr
+            legacy_pr: "1"
+          - case: nix-installer-revision
+            legacy_revision: 0123456789abcdef0123456789abcdef01234567
+          - case: nix-installer-url
+            legacy_url: https://example.invalid/nix-installer.sh
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Create a fake nix-installer binary root
+        run: |
+          FAKE_ROOT="$RUNNER_TEMP/fake-nix-installer-root"
+          mkdir -p "$FAKE_ROOT"
+          cat > "$FAKE_ROOT/nix-installer-x86_64-linux" <<'EOF'
+          #!/bin/bash
+          set -e
+          LOG=/tmp/fake-nix-installer
+          mkdir -p "$LOG"
+          printf '%s\n' "$@" > "$LOG/args"
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          $SUDO mkdir -p /nix/var/nix/profiles/default/bin /nix/var/nix/daemon-socket
+          printf '#!/bin/sh\ntouch /nix/var/nix/daemon-socket/socket\nexec sleep 20\n' | $SUDO tee /nix/var/nix/profiles/default/bin/nix-daemon >/dev/null
+          $SUDO chmod 755 /nix/var/nix/profiles/default/bin/nix-daemon
+          echo "fake nix-installer invoked"
+          EOF
+          chmod 755 "$FAKE_ROOT/nix-installer-x86_64-linux"
+          cp "$FAKE_ROOT/nix-installer-x86_64-linux" "$FAKE_ROOT/nix-installer-aarch64-linux"
+          echo "FAKE_ROOT=$FAKE_ROOT" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          local-root: ${{ env.FAKE_ROOT }}
+          source-tag: ${{ matrix.source_tag }}
+          source-branch: ${{ matrix.source_branch }}
+          source-pr: ${{ matrix.source_pr }}
+          source-revision: ${{ matrix.source_revision }}
+          source-url: ${{ matrix.source_url }}
+          source-checksums-url: ${{ matrix.checksums_url }}
+          source-checksums-sha256: ${{ matrix.checksums_sha256 }}
+          nix-installer-tag: ${{ matrix.legacy_tag }}
+          nix-installer-branch: ${{ matrix.legacy_branch }}
+          nix-installer-pr: ${{ matrix.legacy_pr }}
+          nix-installer-revision: ${{ matrix.legacy_revision }}
+          nix-installer-url: ${{ matrix.legacy_url }}
+      - name: Assert the local-root binary was used
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          echo "case: $CASE"
+          ARGS=/tmp/fake-nix-installer/args
+          if [ ! -f "$ARGS" ]; then
+            echo "FAIL: local-root installer was not used"
+            exit 1
+          fi
+          cat "$ARGS"
+          if [ "$(sed -n 1p "$ARGS")" != "install" ]; then
+            echo "FAIL: expected 'install' subcommand"
+            exit 1
+          fi
+          echo "PASS"

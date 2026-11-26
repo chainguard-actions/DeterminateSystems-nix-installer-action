@@ -1,0 +1,99 @@
+name: Test local-root fake installer receives configured env and args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Create a fake nix-installer binary root
+        run: |
+          FAKE_ROOT="$RUNNER_TEMP/fake-nix-installer-root"
+          mkdir -p "$FAKE_ROOT"
+          cat > "$FAKE_ROOT/nix-installer-x86_64-linux" <<'EOF'
+          #!/bin/bash
+          set -e
+          LOG=/tmp/fake-nix-installer
+          mkdir -p "$LOG"
+          printf '%s\n' "$@" > "$LOG/args"
+          env > "$LOG/env"
+          SUDO=""
+          if [ "$(id -u)" != "0" ]; then SUDO="sudo"; fi
+          $SUDO mkdir -p /nix/var/nix/profiles/default/bin /nix/var/nix/daemon-socket
+          printf '#!/bin/sh\ntouch /nix/var/nix/daemon-socket/socket\nexec sleep 20\n' | $SUDO tee /nix/var/nix/profiles/default/bin/nix-daemon >/dev/null
+          $SUDO chmod 755 /nix/var/nix/profiles/default/bin/nix-daemon
+          echo "fake nix-installer invoked"
+          EOF
+          sed -i 's/^          //' "$FAKE_ROOT/nix-installer-x86_64-linux"
+          chmod 755 "$FAKE_ROOT/nix-installer-x86_64-linux"
+          cp "$FAKE_ROOT/nix-installer-x86_64-linux" "$FAKE_ROOT/nix-installer-aarch64-linux"
+          head -n 3 "$FAKE_ROOT/nix-installer-x86_64-linux"
+          echo "FAKE_ROOT=$FAKE_ROOT" >> "$GITHUB_ENV"
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          local-root: ${{ env.FAKE_ROOT }}
+          planner: linux
+          init: none
+          extra-args: --fake-flag-one "two words"
+          backtrace: full
+          log-directives: nix_installer=trace
+          logger: compact
+          nix-build-group-id: "30000"
+          nix-build-group-name: fakebld
+          nix-build-user-base: "30100"
+          nix-build-user-count: "4"
+          nix-build-user-prefix: fakebldr
+          nix-package-url: https://example.invalid/nix.tar.xz
+          proxy: http://proxy.example.invalid:3128
+          ssl-cert-file: /etc/ssl/certs/ca-certificates.crt
+      - name: Assert installer args
+        run: |
+          ARGS=/tmp/fake-nix-installer/args
+          if [ ! -f "$ARGS" ]; then
+            echo "FAIL: fake installer was not invoked"
+            exit 1
+          fi
+          echo "args:"; cat "$ARGS"
+          [ "$(sed -n 1p "$ARGS")" = "install" ] || { echo "FAIL: first arg should be install"; exit 1; }
+          [ "$(sed -n 2p "$ARGS")" = "linux" ] || { echo "FAIL: second arg should be planner linux"; exit 1; }
+          for want in "--fake-flag-one" "two words" "--prefer-upstream-nix"; do
+            if ! grep -qxF -- "$want" "$ARGS"; then
+              echo "FAIL: missing arg '$want'"
+              exit 1
+            fi
+          done
+          if grep -qxF -- "--determinate" "$ARGS"; then
+            echo "FAIL: --determinate should not be passed when determinate=false"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert installer environment
+        run: |
+          ENVF=/tmp/fake-nix-installer/env
+          check() {
+            if ! grep -qxF -- "$1" "$ENVF"; then
+              echo "FAIL: expected env line '$1'"
+              grep -E '^(NIX_INSTALLER_|RUST_BACKTRACE)' "$ENVF" | grep -v EXTRA_CONF || true
+              exit 1
+            fi
+            echo "ok: $1"
+          }
+          check "RUST_BACKTRACE=full"
+          check "NIX_INSTALLER_LOG_DIRECTIVES=nix_installer=trace"
+          check "NIX_INSTALLER_LOGGER=compact"
+          check "NIX_INSTALLER_NIX_BUILD_GROUP_ID=30000"
+          check "NIX_INSTALLER_NIX_BUILD_GROUP_NAME=fakebld"
+          check "NIX_INSTALLER_NIX_BUILD_USER_ID_BASE=30100"
+          check "NIX_INSTALLER_NIX_BUILD_USER_COUNT=4"
+          check "NIX_INSTALLER_NIX_BUILD_USER_PREFIX=fakebldr"
+          check "NIX_INSTALLER_NIX_PACKAGE_URL=https://example.invalid/nix.tar.xz"
+          check "NIX_INSTALLER_PROXY=http://proxy.example.invalid:3128"
+          check "NIX_INSTALLER_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+          check "NIX_INSTALLER_INIT=none"
+          check "NIX_INSTALLER_NO_CONFIRM=true"
+          echo "PASS"

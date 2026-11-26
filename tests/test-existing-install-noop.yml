@@ -1,0 +1,41 @@
+name: Test second run detects existing install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: first
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+      - name: Record nix version
+        id: v1
+        run: echo "version=$(nix --version)" >> "$GITHUB_OUTPUT"
+      - id: second
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+      - name: Assert nix still works after noop second install
+        env:
+          V1: ${{ steps.v1.outputs.version }}
+          OUTCOME: ${{ steps.second.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          V2="$(nix --version)"
+          echo "v1: $V1"
+          echo "v2: $V2"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "FAIL: second run did not succeed"
+            exit 1
+          fi
+          if [ -z "$V2" ] || [ "$V1" != "$V2" ]; then
+            echo "FAIL: nix version changed or missing after noop install"
+            exit 1
+          fi
+          echo "PASS"
