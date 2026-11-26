@@ -1,0 +1,38 @@
+name: Test explicit planner, init and logging options
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          planner: linux
+          init: none
+          force-no-systemd: "true"
+          backtrace: full
+          logger: compact
+          log-directives: nix_installer=info
+      - name: Assert nix installed
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *nix*) echo "PASS: nix --version ok" ;;
+            *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+          esac
+          if [ ! -d /nix/store ] || [ ! -f /etc/nix/nix.conf ]; then
+            echo "FAIL: /nix/store or /etc/nix/nix.conf missing"
+            exit 1
+          fi
+          echo "PASS"

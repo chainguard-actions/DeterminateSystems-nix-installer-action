@@ -1,0 +1,41 @@
+name: Test extra-conf is written to nix config
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          extra-conf: |
+            max-jobs = 7
+      - name: Assert extra-conf landed in nix config files
+        run: |
+          # The installer writes extra-conf to nix.custom.conf (included from nix.conf)
+          for f in /etc/nix/nix.conf /etc/nix/nix.custom.conf; do
+            echo "=== $f ==="
+            cat "$f" 2>/dev/null || echo "(missing)"
+          done
+          if ! cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null | grep -Eq '^[[:space:]]*max-jobs[[:space:]]*=[[:space:]]*7[[:space:]]*$'; then
+            echo "FAIL: max-jobs = 7 not found in nix.conf or nix.custom.conf"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert nix sees the setting
+        run: |
+          VAL="$(nix config show max-jobs 2>/dev/null | tr -d '[:space:]')"
+          if [ -z "$VAL" ]; then
+            VAL="$(nix show-config 2>/dev/null | awk -F' = ' '$1=="max-jobs"{print $2}' | tr -d '[:space:]')"
+          fi
+          echo "max-jobs: $VAL"
+          if [ "$VAL" != "7" ]; then
+            echo "FAIL: expected 7"
+            exit 1
+          fi
+          echo "PASS"

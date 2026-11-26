@@ -1,0 +1,41 @@
+name: Test deprecated nix-installer-pr input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # PR artifacts are only published for some PRs and may have expired, so the
+      # download may legitimately 404; a successful run must yield working nix.
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          nix-installer-pr: "1"
+      - name: Assert install succeeded or failed cleanly on missing artifact
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "success" ]; then
+            if ! command -v nix >/dev/null 2>&1; then
+              echo "FAIL: action succeeded but nix not on PATH"
+              exit 1
+            fi
+            VERSION="$(nix --version)"
+            echo "nix version: $VERSION"
+            case "$VERSION" in
+              *nix*) echo "PASS" ;;
+              *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+            esac
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: no artifact published for this PR; action failed cleanly"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

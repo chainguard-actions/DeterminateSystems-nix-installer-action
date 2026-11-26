@@ -1,0 +1,58 @@
+name: Test custom Nix build users and group
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          nix-build-group-name: nixbldtest
+          nix-build-group-id: "31000"
+          nix-build-user-prefix: nixbldtest
+          nix-build-user-base: "31000"
+          nix-build-user-count: "4"
+      - name: Assert nix installed
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          echo "PASS"
+      - name: Assert custom build group exists with requested GID
+        run: |
+          GRP="$(getent group nixbldtest || true)"
+          echo "group: $GRP"
+          if [ -z "$GRP" ]; then
+            echo "FAIL: group nixbldtest not found"
+            exit 1
+          fi
+          GID="$(echo "$GRP" | cut -d: -f3)"
+          if [ "$GID" != "31000" ]; then
+            echo "FAIL: expected gid 31000, got $GID"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert build users use custom prefix
+        run: |
+          getent passwd | grep '^nixbldtest' || true
+          COUNT="$(getent passwd | grep -c '^nixbldtest' || true)"
+          echo "count: $COUNT"
+          if [ "$COUNT" -lt 1 ]; then
+            echo "FAIL: no build users with prefix nixbldtest"
+            exit 1
+          fi
+          if grep -rq 'build-users-group *= *nixbldtest' /etc/nix/; then
+            echo "PASS: build-users-group set"
+          else
+            cat /etc/nix/nix.conf
+            echo "FAIL: build-users-group = nixbldtest not found in /etc/nix"
+            exit 1
+          fi

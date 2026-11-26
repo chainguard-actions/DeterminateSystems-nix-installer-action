@@ -1,0 +1,26 @@
+name: Test trust-runner-user adds runner to trusted-users
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          trust-runner-user: "true"
+      - name: Assert current user is trusted
+        run: |
+          ME="$(id -un)"
+          echo "user: $ME"
+          cat /etc/nix/nix.conf
+          if ! grep -E '^trusted-users' /etc/nix/nix.conf | grep -qw "$ME"; then
+            echo "FAIL: '$ME' not listed in trusted-users"
+            exit 1
+          fi
+          echo "PASS"

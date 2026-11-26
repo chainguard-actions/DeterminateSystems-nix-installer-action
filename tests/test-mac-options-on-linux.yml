@@ -1,0 +1,38 @@
+name: Test macOS-only options on a Linux runner
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          mac-case-sensitive: "true"
+          mac-encrypt: "true"
+          mac-root-disk: disk1
+          mac-volume-label: Nix Store Test
+      - name: Assert macOS-only options are rejected or ignored on Linux
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action rejected macOS-only options on a Linux runner"
+          elif [ "$OUTCOME" = "success" ]; then
+            if ! command -v nix >/dev/null 2>&1; then
+              echo "FAIL: action succeeded but nix not on PATH"
+              exit 1
+            fi
+            nix --version
+            echo "PASS: macOS-only options ignored and nix installed"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

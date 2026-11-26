@@ -1,0 +1,105 @@
+name: Test proxy option with a local forwarding proxy
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Start a local HTTP CONNECT forwarding proxy
+        run: |
+          cat > /tmp/proxy.py <<'EOF'
+          import socket, threading
+          from urllib.parse import urlsplit
+          log = open('/tmp/proxy.log', 'a', buffering=1)
+          def pipe(a, b):
+              try:
+                  while True:
+                      d = a.recv(65536)
+                      if not d:
+                          break
+                      b.sendall(d)
+              except Exception:
+                  pass
+              finally:
+                  try:
+                      b.shutdown(socket.SHUT_WR)
+                  except Exception:
+                      pass
+          def handle(c):
+              try:
+                  data = b''
+                  while b'\r\n\r\n' not in data:
+                      chunk = c.recv(4096)
+                      if not chunk:
+                          c.close()
+                          return
+                      data += chunk
+                  head, rest = data.split(b'\r\n\r\n', 1)
+                  line = head.split(b'\r\n')[0].decode()
+                  log.write(line + '\n')
+                  method, target, _ = line.split(' ', 2)
+                  if method == 'CONNECT':
+                      host, port = target.rsplit(':', 1)
+                      u = socket.create_connection((host, int(port)))
+                      c.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+                      if rest:
+                          u.sendall(rest)
+                  else:
+                      p = urlsplit(target)
+                      u = socket.create_connection((p.hostname, p.port or 80))
+                      path = p.path or '/'
+                      if p.query:
+                          path += '?' + p.query
+                      lines = head.split(b'\r\n')
+                      lines[0] = ('%s %s HTTP/1.0' % (method, path)).encode()
+                      u.sendall(b'\r\n'.join(lines) + b'\r\n\r\n' + rest)
+                  threading.Thread(target=pipe, args=(c, u), daemon=True).start()
+                  pipe(u, c)
+              except Exception as e:
+                  log.write('ERR %s\n' % e)
+                  try:
+                      c.close()
+                  except Exception:
+                      pass
+          s = socket.socket()
+          s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          s.bind(('127.0.0.1', 3128))
+          s.listen(64)
+          while True:
+              c, _ = s.accept()
+              threading.Thread(target=handle, args=(c,), daemon=True).start()
+          EOF
+          nohup python3 /tmp/proxy.py >/tmp/proxy.out 2>&1 &
+          for i in $(seq 1 20); do
+            if curl -s -o /dev/null -x http://127.0.0.1:3128 https://github.com; then
+              echo "proxy is up"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "FAIL: proxy did not start"
+          cat /tmp/proxy.out || true
+          exit 1
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          proxy: http://127.0.0.1:3128
+      - name: Assert nix installed with proxy configured
+        run: |
+          echo "--- proxy log ---"
+          cat /tmp/proxy.log || true
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *nix*) echo "PASS" ;;
+            *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+          esac

@@ -1,0 +1,43 @@
+name: Test local-root directory of nix-installer binaries
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: prep
+        name: Populate local root with nix-installer-$ARCH-$OS
+        run: |
+          case "$(uname -m)" in
+            x86_64) A=x86_64 ;;
+            aarch64|arm64) A=aarch64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          DIR="${RUNNER_TEMP:-/tmp}/nix-installer-root"
+          mkdir -p "$DIR"
+          curl -fsSL -o "$DIR/nix-installer-${A}-linux" \
+            "https://github.com/DeterminateSystems/nix-installer/releases/latest/download/nix-installer-${A}-linux"
+          chmod +x "$DIR/nix-installer-${A}-linux"
+          ls -l "$DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          local-root: ${{ steps.prep.outputs.dir }}
+      - name: Assert nix installed
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *nix*) echo "PASS" ;;
+            *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+          esac

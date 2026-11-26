@@ -1,0 +1,37 @@
+name: Test nix-package-url installs a specific Nix tarball
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: prep
+        name: Compute tarball URL for this architecture
+        run: |
+          case "$(uname -m)" in
+            x86_64) A=x86_64 ;;
+            aarch64|arm64) A=aarch64 ;;
+            *) echo "unsupported arch $(uname -m)"; exit 1 ;;
+          esac
+          echo "url=https://releases.nixos.org/nix/nix-2.24.9/nix-2.24.9-${A}-linux.tar.xz" >> "$GITHUB_OUTPUT"
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          nix-package-url: ${{ steps.prep.outputs.url }}
+      - name: Assert requested Nix version installed
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *2.24.9*) echo "PASS" ;;
+            *) echo "FAIL: expected Nix 2.24.9"; exit 1 ;;
+          esac

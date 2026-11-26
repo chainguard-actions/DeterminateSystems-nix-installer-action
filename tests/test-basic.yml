@@ -1,0 +1,56 @@
+name: Test basic install (upstream Nix, no systemd)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+      - name: Assert nix is on PATH and works
+        run: |
+          set -u
+          echo "PATH: $PATH"
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *nix*) echo "PASS: nix --version ok" ;;
+            *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+          esac
+      - name: Assert nix store and config exist
+        run: |
+          if [ ! -d /nix/store ]; then
+            echo "FAIL: /nix/store missing"
+            exit 1
+          fi
+          if [ ! -f /etc/nix/nix.conf ]; then
+            echo "FAIL: /etc/nix/nix.conf missing"
+            exit 1
+          fi
+          cat /etc/nix/nix.conf
+          echo "PASS"
+      - name: Assert nix daemon is reachable
+        run: |
+          if [ ! -S /nix/var/nix/daemon-socket/socket ]; then
+            echo "FAIL: daemon socket missing"
+            exit 1
+          fi
+          # stderr may contain harmless warnings (e.g. unknown setting); keep stdout only
+          OUT="$(nix eval --expr '1 + 2' 2>/tmp/nix-eval-stderr | tr -d '[:space:]')"
+          echo "stderr:"; cat /tmp/nix-eval-stderr || true
+          echo "eval: $OUT"
+          if [ "$OUT" != "3" ]; then
+            echo "FAIL: expected 3"
+            exit 1
+          fi
+          echo "PASS"

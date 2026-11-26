@@ -1,0 +1,39 @@
+name: Test deprecated nix-installer-tag input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: prep
+        name: Look up latest nix-installer release tag
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          TAG="$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/DeterminateSystems/nix-installer/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          echo "tag: $TAG"
+          if [ -z "$TAG" ]; then echo "FAIL: could not resolve tag"; exit 1; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          nix-installer-tag: ${{ steps.prep.outputs.tag }}
+      - name: Assert nix installed
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *nix*) echo "PASS" ;;
+            *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+          esac

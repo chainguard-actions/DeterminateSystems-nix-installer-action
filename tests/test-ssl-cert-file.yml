@@ -1,0 +1,36 @@
+name: Test ssl-cert-file option
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure CA bundle exists
+        run: |
+          ls -l /etc/ssl/certs/ca-certificates.crt
+          if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+            echo "FAIL: CA bundle missing in runner image"
+            exit 1
+          fi
+      - id: action
+        uses: .
+        with:
+          determinate: "false"
+          kvm: "false"
+          summarize: "false"
+          diagnostic-endpoint: ""
+          ssl-cert-file: /etc/ssl/certs/ca-certificates.crt
+      - name: Assert nix installed
+        run: |
+          echo "NIX_SSL_CERT_FILE=${NIX_SSL_CERT_FILE:-<unset>}"
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix version: $VERSION"
+          case "$VERSION" in
+            *nix*) echo "PASS" ;;
+            *) echo "FAIL: unexpected nix --version output"; exit 1 ;;
+          esac
