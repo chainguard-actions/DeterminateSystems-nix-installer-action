@@ -1,0 +1,86 @@
+name: Test nonexistent installer sources fail
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: source_pr
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          source-pr: 999999999
+          _internal-strict-mode: true
+      - id: source_revision
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          source-revision: 0000000000000000000000000000000000000000
+          _internal-strict-mode: true
+      - id: legacy_pr
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          nix-installer-pr: 999999999
+          _internal-strict-mode: true
+      - id: legacy_revision
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          nix-installer-revision: 0000000000000000000000000000000000000000
+          _internal-strict-mode: true
+      - id: legacy_branch
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          nix-installer-branch: actionchain-branch-that-does-not-exist
+          _internal-strict-mode: true
+      - id: legacy_url
+        uses: .
+        continue-on-error: true
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          nix-installer-url: https://github.com/DeterminateSystems/nix-installer/releases/download/v0.0.0-does-not-exist/nix-installer.sh
+          _internal-strict-mode: true
+      - name: Assert every nonexistent source failed and Nix was not installed
+        env:
+          O_SOURCE_PR: ${{ steps.source_pr.outcome }}
+          O_SOURCE_REVISION: ${{ steps.source_revision.outcome }}
+          O_LEGACY_PR: ${{ steps.legacy_pr.outcome }}
+          O_LEGACY_REVISION: ${{ steps.legacy_revision.outcome }}
+          O_LEGACY_BRANCH: ${{ steps.legacy_branch.outcome }}
+          O_LEGACY_URL: ${{ steps.legacy_url.outcome }}
+        run: |
+          rc=0
+          for name in O_SOURCE_PR O_SOURCE_REVISION O_LEGACY_PR O_LEGACY_REVISION O_LEGACY_BRANCH O_LEGACY_URL; do
+            val="$(printenv "$name")"
+            echo "$name: $val"
+            if [ "$val" != "failure" ]; then
+              echo "FAIL: $name expected failure"
+              rc=1
+            fi
+          done
+          if [ -f /nix/receipt.json ]; then
+            echo "FAIL: Nix should not have been installed"
+            rc=1
+          fi
+          [ "$rc" = 0 ] && echo "PASS"
+          exit $rc

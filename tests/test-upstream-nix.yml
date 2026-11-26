@@ -1,0 +1,61 @@
+name: Test upstream Nix install with extra-conf
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          extra-conf: |
+            experimental-features = nix-command flakes
+            max-jobs = 2
+      - name: Assert nix is installed and on PATH
+        run: |
+          set -x
+          if ! command -v nix; then
+            echo "FAIL: nix not found on PATH ($PATH)"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix --version: $VERSION"
+          if [ -z "$VERSION" ]; then
+            echo "FAIL: empty nix version"
+            exit 1
+          fi
+          if [ ! -f /nix/receipt.json ]; then
+            echo "FAIL: /nix/receipt.json missing"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert nix config (nix.conf + included nix.custom.conf) contains extra-conf and trusted-users
+        run: |
+          CONF="$(cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null)"
+          echo "$CONF"
+          echo "$CONF" | grep -q 'max-jobs = 2' || { echo "FAIL: max-jobs line missing"; exit 1; }
+          echo "$CONF" | grep -q 'experimental-features = nix-command flakes' || { echo "FAIL: experimental-features line missing"; exit 1; }
+          echo "$CONF" | grep -q '^trusted-users = .*root' || { echo "FAIL: trusted-users missing"; exit 1; }
+          echo "PASS"
+      - name: Assert effective max-jobs setting is 2
+        run: |
+          ACTUAL="$(nix config show max-jobs 2>/dev/null || nix show-config 2>/dev/null | sed -n 's/^max-jobs = //p')"
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "2" ]; then
+            echo "FAIL: expected effective max-jobs 2"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert nix can evaluate an expression
+        run: |
+          RESULT="$(nix eval --store dummy:// --expr '1 + 1')"
+          echo "result: $RESULT"
+          if [ "$RESULT" != "2" ]; then
+            echo "FAIL: expected 2"
+            exit 1
+          fi
+          echo "PASS"

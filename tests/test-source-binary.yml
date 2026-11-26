@@ -1,0 +1,33 @@
+name: Test source-binary with a pre-downloaded installer
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: dl
+        name: Download nix-installer binary
+        run: |
+          set -e
+          ARCH="$(uname -m)"
+          mkdir -p /tmp/nix-installer-bin
+          OUT="/tmp/nix-installer-bin/nix-installer-$ARCH-linux"
+          curl -fsSL -o "$OUT" "https://github.com/DeterminateSystems/nix-installer/releases/download/v3.12.2/nix-installer-$ARCH-linux"
+          chmod +x "$OUT"
+          "$OUT" --version
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          source-binary: ${{ steps.dl.outputs.path }}
+      - name: Assert nix installed from the provided binary
+        run: |
+          command -v nix || { echo "FAIL: nix not on PATH"; exit 1; }
+          nix --version
+          [ -f /nix/receipt.json ] || { echo "FAIL: /nix/receipt.json missing"; exit 1; }
+          grep -o '"version": *"[^"]*"' /nix/receipt.json | head -1 || true
+          echo "PASS"

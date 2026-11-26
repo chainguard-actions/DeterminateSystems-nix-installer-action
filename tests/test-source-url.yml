@@ -1,0 +1,26 @@
+name: Test source-url pointing at a release asset
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: url
+        name: Compute installer URL for this arch
+        run: |
+          ARCH="$(uname -m)"
+          echo "url=https://github.com/DeterminateSystems/nix-installer/releases/download/v3.12.2/nix-installer-$ARCH-linux" >> "$GITHUB_OUTPUT"
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          source-url: ${{ steps.url.outputs.url }}
+      - name: Assert nix installed
+        run: |
+          command -v nix || { echo "FAIL: nix not on PATH"; exit 1; }
+          nix --version
+          [ -f /nix/receipt.json ] || { echo "FAIL: /nix/receipt.json missing"; exit 1; }
+          echo "PASS"

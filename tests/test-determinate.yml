@@ -1,0 +1,35 @@
+name: Test default Determinate Nix install
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          kvm: false
+          summarize: false
+      - name: Assert Determinate Nix is installed
+        run: |
+          echo "PATH=$PATH"
+          if ! command -v determinate-nixd; then
+            echo "FAIL: determinate-nixd not on PATH"
+            exit 1
+          fi
+          if ! command -v nix; then
+            echo "FAIL: nix not on PATH"
+            exit 1
+          fi
+          VERSION="$(nix --version)"
+          echo "nix --version: $VERSION"
+          if [ -z "$VERSION" ]; then
+            echo "FAIL: empty nix version"
+            exit 1
+          fi
+          if [ ! -f /nix/receipt.json ]; then
+            echo "FAIL: /nix/receipt.json missing"
+            exit 1
+          fi
+          echo "PASS"

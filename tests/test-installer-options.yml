@@ -1,0 +1,58 @@
+name: Test installer tuning options (planner, init, logger, extra-args, build ids)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ensure CA bundle exists for ssl-cert-file
+        run: |
+          ls -l /etc/ssl/certs/ca-certificates.crt || { echo "FAIL: CA bundle missing"; exit 1; }
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          planner: linux
+          init: none
+          backtrace: full
+          logger: compact
+          log-directives: nix_installer=info
+          extra-args: --nix-build-user-count 2
+          nix-build-group-id: 31500
+          nix-build-user-base: 31000
+          ssl-cert-file: /etc/ssl/certs/ca-certificates.crt
+      - name: Assert nix installed
+        run: |
+          command -v nix || { echo "FAIL: nix not on PATH"; exit 1; }
+          nix --version
+          [ -f /nix/receipt.json ] || { echo "FAIL: /nix/receipt.json missing"; exit 1; }
+          echo "PASS"
+      - name: Assert build group id and user base / count applied
+        run: |
+          GRP="$(getent group nixbld)"
+          echo "group: $GRP"
+          GID="$(echo "$GRP" | cut -d: -f3)"
+          if [ "$GID" != "31500" ]; then
+            echo "FAIL: expected nixbld gid 31500, got '$GID'"
+            exit 1
+          fi
+          for i in 1 2; do
+            ENT="$(getent passwd "nixbld$i")" || { echo "FAIL: nixbld$i missing"; exit 1; }
+            echo "user: $ENT"
+            USERID="$(echo "$ENT" | cut -d: -f3)"
+            if [ "$USERID" -lt 31000 ] || [ "$USERID" -gt 31010 ]; then
+              echo "FAIL: nixbld$i uid $USERID not based on 31000"
+              exit 1
+            fi
+          done
+          if getent passwd nixbld3; then
+            echo "FAIL: extra-args --nix-build-user-count 2 not honored (nixbld3 exists)"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Show ssl-cert-file config (informational)
+        run: |
+          cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null || true

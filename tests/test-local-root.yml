@@ -1,0 +1,30 @@
+name: Test local-root installer directory
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Download nix-installer binary into a local root
+        run: |
+          set -e
+          ARCH="$(uname -m)"
+          mkdir -p /tmp/nix-installer-root
+          OUT="/tmp/nix-installer-root/nix-installer-$ARCH-linux"
+          curl -fsSL -o "$OUT" "https://github.com/DeterminateSystems/nix-installer/releases/download/v3.12.2/nix-installer-$ARCH-linux"
+          chmod +x "$OUT"
+          ls -l /tmp/nix-installer-root
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          local-root: /tmp/nix-installer-root
+      - name: Assert nix installed from local root
+        run: |
+          command -v nix || { echo "FAIL: nix not on PATH"; exit 1; }
+          nix --version
+          [ -f /nix/receipt.json ] || { echo "FAIL: /nix/receipt.json missing"; exit 1; }
+          echo "PASS"

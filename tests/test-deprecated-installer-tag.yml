@@ -1,0 +1,21 @@
+name: Test deprecated nix-installer-tag input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          nix-installer-tag: v3.12.2
+      - name: Assert nix installed
+        run: |
+          command -v nix || { echo "FAIL: nix not on PATH"; exit 1; }
+          nix --version
+          [ -f /nix/receipt.json ] || { echo "FAIL: /nix/receipt.json missing"; exit 1; }
+          echo "PASS"

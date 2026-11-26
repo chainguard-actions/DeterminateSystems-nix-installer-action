@@ -1,0 +1,45 @@
+name: Test custom build users and group
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          kvm: false
+          summarize: false
+          trust-runner-user: false
+          nix-build-group-name: mybldgrp
+          nix-build-user-prefix: mybld
+          nix-build-user-count: 3
+      - name: Assert custom build group and users exist
+        run: |
+          getent group mybldgrp || { echo "FAIL: group mybldgrp missing"; exit 1; }
+          for i in 1 2 3; do
+            getent passwd "mybld$i" || { echo "FAIL: user mybld$i missing"; exit 1; }
+            id -nG "mybld$i" | grep -qw mybldgrp || { echo "FAIL: mybld$i not in mybldgrp"; exit 1; }
+          done
+          if getent passwd mybld4; then
+            echo "FAIL: unexpected user mybld4 (count should be 3)"
+            exit 1
+          fi
+          if getent group nixbld; then
+            echo "FAIL: default nixbld group should not have been created"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert runner user not added to trusted-users when trust-runner-user is false
+        run: |
+          CONF="$(cat /etc/nix/nix.conf /etc/nix/nix.custom.conf 2>/dev/null)"
+          echo "$CONF"
+          # With trust-runner-user=true the action appends the runner user ("root root" under act)
+          if echo "$CONF" | grep -q '^trusted-users = root root'; then
+            echo "FAIL: runner user should not be appended to trusted-users"
+            exit 1
+          fi
+          nix --version
+          echo "PASS"
