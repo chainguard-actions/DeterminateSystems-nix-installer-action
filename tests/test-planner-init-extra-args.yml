@@ -1,0 +1,29 @@
+name: Test install with explicit planner, init and extra-args
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          diagnostic-endpoint: ""
+          planner: linux
+          init: none
+          extra-args: "--determinate"
+      - name: Assert nix works
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          RESULT="$(nix eval --expr '1 + 1')"
+          echo "result: $RESULT"
+          if [ "$RESULT" != "2" ]; then
+            echo "FAIL: expected 2"
+            exit 1
+          fi
+          echo "PASS"

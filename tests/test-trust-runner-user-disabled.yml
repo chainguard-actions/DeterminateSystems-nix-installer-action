@@ -1,0 +1,40 @@
+name: Test install with trust-runner-user disabled and no github token conf
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          trust-runner-user: false
+          kvm: false
+          summarize: false
+          diagnostic-endpoint: ""
+      - name: Assert nix installed and works
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          RESULT="$(nix eval --raw --expr '"hello-" + "nix"')"
+          echo "result: $RESULT"
+          if [ "$RESULT" != "hello-nix" ]; then
+            echo "FAIL: expected hello-nix"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert runner user not added to trusted-users
+        run: |
+          cat /etc/nix/nix.conf
+          USER_NAME="$(id -un)"
+          echo "user: $USER_NAME"
+          if [ "$USER_NAME" != "root" ] && grep -E '^\s*trusted-users' /etc/nix/nix.conf | grep -qw "$USER_NAME"; then
+            echo "FAIL: runner user should not be trusted"
+            exit 1
+          fi
+          echo "PASS"

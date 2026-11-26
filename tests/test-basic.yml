@@ -1,0 +1,39 @@
+name: Test basic install (Determinate Nix default)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          diagnostic-endpoint: ""
+      - name: Assert nix is installed and on PATH
+        run: |
+          set -e
+          echo "PATH: $PATH"
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          if [ ! -d /nix/store ]; then
+            echo "FAIL: /nix/store missing"
+            exit 1
+          fi
+          if [ ! -f /etc/nix/nix.conf ]; then
+            echo "FAIL: /etc/nix/nix.conf missing"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert nix can evaluate an expression
+        run: |
+          RESULT="$(nix eval --expr '1 + 2')"
+          echo "result: $RESULT"
+          if [ "$RESULT" != "3" ]; then
+            echo "FAIL: expected 3"
+            exit 1
+          fi
+          echo "PASS"

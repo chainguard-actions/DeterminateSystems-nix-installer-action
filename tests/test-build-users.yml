@@ -1,0 +1,49 @@
+name: Test install with custom build group and users
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          diagnostic-endpoint: ""
+          summarize: false
+          nix-build-group-id: "31000"
+          nix-build-group-name: nixbuilders
+          nix-build-user-base: "31000"
+          nix-build-user-count: "4"
+          nix-build-user-prefix: nixbuilder
+      - name: Assert nix works
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          echo "PASS"
+      - name: Assert custom build group was created
+        run: |
+          ENTRY="$(getent group nixbuilders || true)"
+          echo "group entry: $ENTRY"
+          if [ -z "$ENTRY" ]; then
+            echo "FAIL: group nixbuilders not found"
+            exit 1
+          fi
+          GID="$(echo "$ENTRY" | cut -d: -f3)"
+          if [ "$GID" != "31000" ]; then
+            echo "FAIL: expected gid 31000, got $GID"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert custom build user was created
+        run: |
+          if ! getent passwd nixbuilder1; then
+            echo "FAIL: user nixbuilder1 not found"
+            getent passwd | grep -i nix || true
+            exit 1
+          fi
+          echo "PASS"

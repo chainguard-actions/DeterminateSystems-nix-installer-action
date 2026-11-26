@@ -1,0 +1,33 @@
+name: Test install with logging, backtrace and ssl-cert-file options
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Assert CA bundle exists
+        run: |
+          ls -l /etc/ssl/certs/ca-certificates.crt || { echo "FAIL: CA bundle missing"; exit 1; }
+      - id: action
+        uses: .
+        with:
+          diagnostic-endpoint: ""
+          backtrace: full
+          logger: compact
+          log-directives: nix_installer=info
+          ssl-cert-file: /etc/ssl/certs/ca-certificates.crt
+      - name: Assert nix works
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          RESULT="$(nix eval --expr '2 * 21')"
+          echo "result: $RESULT"
+          if [ "$RESULT" != "42" ]; then
+            echo "FAIL: expected 42"
+            exit 1
+          fi
+          echo "PASS"

@@ -1,0 +1,38 @@
+name: Test install from a pre-downloaded source-binary
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Download nix-installer binary
+        run: |
+          set -e
+          ARCH="$(uname -m)"
+          mkdir -p /tmp/nix-installer-root
+          curl -sSfL "https://install.determinate.systems/nix-installer/stable/${ARCH}-linux" \
+            -o "/tmp/nix-installer-root/nix-installer-${ARCH}-linux"
+          chmod +x "/tmp/nix-installer-root/nix-installer-${ARCH}-linux"
+          cp "/tmp/nix-installer-root/nix-installer-${ARCH}-linux" /tmp/nix-installer
+          ls -l /tmp/nix-installer /tmp/nix-installer-root
+      - id: action
+        uses: .
+        with:
+          diagnostic-endpoint: ""
+          source-binary: /tmp/nix-installer
+          local-root: /tmp/nix-installer-root
+      - name: Assert nix works
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          RESULT="$(nix eval --expr '10 - 4')"
+          echo "result: $RESULT"
+          if [ "$RESULT" != "6" ]; then
+            echo "FAIL: expected 6"
+            exit 1
+          fi
+          echo "PASS"

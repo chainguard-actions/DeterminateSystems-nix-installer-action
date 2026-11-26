@@ -1,0 +1,49 @@
+name: Test upstream Nix install with extra-conf
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          determinate: false
+          diagnostic-endpoint: ""
+          summarize: false
+          extra-conf: |
+            max-jobs = 3
+            keep-outputs = true
+      - name: Assert nix installed
+        run: |
+          if ! command -v nix >/dev/null 2>&1; then
+            echo "FAIL: nix not found on PATH"
+            exit 1
+          fi
+          nix --version
+          echo "PASS"
+      - name: Assert extra-conf written to nix.conf
+        run: |
+          echo "---- /etc/nix/nix.conf ----"
+          cat /etc/nix/nix.conf
+          for f in /etc/nix/*.conf; do echo "== $f"; done
+          ALL="$(cat /etc/nix/*.conf 2>/dev/null)"
+          if ! echo "$ALL" | grep -qE '^\s*max-jobs\s*=\s*3'; then
+            echo "FAIL: max-jobs = 3 not found"
+            exit 1
+          fi
+          if ! echo "$ALL" | grep -qE '^\s*keep-outputs\s*=\s*true'; then
+            echo "FAIL: keep-outputs = true not found"
+            exit 1
+          fi
+          echo "PASS"
+      - name: Assert nix reports the configured value
+        run: |
+          VAL="$(nix config show max-jobs 2>/dev/null || nix show-config 2>/dev/null | awk -F' = ' '$1=="max-jobs"{print $2}')"
+          echo "max-jobs: $VAL"
+          if [ "$VAL" != "3" ]; then
+            echo "FAIL: expected max-jobs 3"
+            exit 1
+          fi
+          echo "PASS"
